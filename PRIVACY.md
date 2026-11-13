@@ -50,6 +50,8 @@ Leeting stores only the following keys in `storage.local`:
 - `leeting_cached_user` — Cached LeetCode username, avatar URL, point balance, and streak counter.
 - `leeting_last_coin_claim` — Date string (`YYYY-MM-DD`) of your last LeetCode Store check-in click.
 - `leeting_notified_contests` — Map of contest slugs already notified so you are never alerted twice for the same contest.
+- `leeting_expanded_sections` — User preference map for collapsible dropdown sections (`user`, `daily`, `contest`, `sbs`, `focus`, `coins`).
+- `leeting_last_startup_notif_date` — Date string (`YYYY-MM-DD`) of browser startup notification check to prevent duplicate daily alerts.
 - `leeting_extension_meta` — Non-destructive local version upgrade metadata.
 
 Clearing extension data or uninstalling Leeting immediately removes all locally stored data.

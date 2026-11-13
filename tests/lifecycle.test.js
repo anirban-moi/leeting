@@ -3,7 +3,7 @@ import {
   handleInstalled,
   registerBackgroundListeners,
 } from '../src/background/lifecycle.js';
-import { ALARM_NAMES, runDailyCheck } from '../src/background/worker.js';
+import { ALARM_NAMES, runDailyCheck, sendStartupNotifications } from '../src/background/worker.js';
 import { STORAGE_KEYS, storageGet } from '../src/services/storage.js';
 
 function createPersistentChromeStorage(initialData = {}) {
@@ -160,9 +160,15 @@ describe('Background Workflows (registerBackgroundListeners)', () => {
     await alarmsOnAlarm.emit({ name: ALARM_NAMES.CONTEST_CHECK });
     expect(checkContest).toHaveBeenCalledTimes(1);
 
-    // Notification clicks open contest page or home fallback
+    // Notification clicks open contest page, login page, daily problem, or home fallback
     await notificationsOnClicked.emit('contest_weekly-contest-480');
     expect(tabsCreate).toHaveBeenCalledWith({ url: 'https://leetcode.com/contest/weekly-contest-480' });
+
+    await notificationsOnClicked.emit('login_reminder_2026-11-13');
+    expect(tabsCreate).toHaveBeenCalledWith({ url: 'https://leetcode.com/accounts/login/' });
+
+    await notificationsOnClicked.emit('daily_2026-11-13');
+    expect(tabsCreate).toHaveBeenCalledWith({ url: 'https://leetcode.com/problemset/' });
 
     await notificationsOnClicked.emit('general_alert');
     expect(tabsCreate).toHaveBeenCalledWith({ url: 'https://leetcode.com' });
@@ -179,6 +185,96 @@ describe('Background Workflows (registerBackgroundListeners)', () => {
         contests: [{ title: 'Weekly Contest 480' }],
       });
     });
+  });
+
+  it('triggers sendStartupNotifications on runtime.onStartup', async () => {
+    const runtimeOnStartup = createListenerRegistry();
+    const sendStartupMock = vi.fn().mockResolvedValue(undefined);
+
+    registerBackgroundListeners(
+      {
+        runtime: { onStartup: runtimeOnStartup },
+      },
+      {
+        syncLeetCodeNetworkRules: vi.fn().mockResolvedValue({ ok: true }),
+        syncFocusModeNetworkRules: vi.fn().mockResolvedValue({ ok: true }),
+        sendStartupNotifications: sendStartupMock,
+      }
+    );
+
+    await runtimeOnStartup.emit();
+    expect(sendStartupMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('sendStartupNotifications', () => {
+  it('notifies pending daily challenge and upcoming contest when signed in', async () => {
+    const mockNotifications = { create: vi.fn() };
+    const mockStorage = new Map();
+
+    await sendStartupNotifications({
+      force: true,
+      notificationsApi: mockNotifications,
+      storageGet: async (k) => mockStorage.get(k),
+      storageSet: async (k, v) => mockStorage.set(k, v),
+      fetchUserStatus: async () => ({ isSignedIn: true, username: 'testuser' }),
+      fetchDailyChallenge: async () => ({
+        date: '2026-11-13',
+        title: 'Merge Intervals',
+        difficulty: 'Medium',
+        isSolved: false,
+      }),
+      fetchUpcomingContests: async () => [
+        {
+          title: 'Biweekly Contest 155',
+          titleSlug: 'biweekly-contest-155',
+          startTimeMs: Date.now() + 3600000 * 5,
+        },
+      ],
+    });
+
+    expect(mockNotifications.create).toHaveBeenCalledWith(
+      'daily_2026-11-13',
+      expect.objectContaining({
+        title: '⚡ LeetCode Daily Challenge',
+        message: expect.stringContaining('Merge Intervals'),
+      })
+    );
+
+    expect(mockNotifications.create).toHaveBeenCalledWith(
+      'contest_biweekly-contest-155',
+      expect.objectContaining({
+        title: '🏆 Upcoming Contest: Biweekly Contest 155',
+        message: expect.stringMatching(/Contest starts in (?:4h 59m|5h 0m)/),
+      })
+    );
+
+    const today = new Date().toISOString().split('T')[0];
+    expect(mockStorage.get(STORAGE_KEYS.LAST_STARTUP_NOTIF_DATE)).toBe(today);
+  });
+
+  it('notifies user to log in when not signed in', async () => {
+    const mockNotifications = { create: vi.fn() };
+    const mockStorage = new Map();
+
+    await sendStartupNotifications({
+      force: true,
+      notificationsApi: mockNotifications,
+      storageGet: async (k) => mockStorage.get(k),
+      storageSet: async (k, v) => mockStorage.set(k, v),
+      fetchUserStatus: async () => ({ isSignedIn: false }),
+      fetchDailyChallenge: async () => null,
+      fetchUpcomingContests: async () => [],
+    });
+
+    const today = new Date().toISOString().split('T')[0];
+    expect(mockNotifications.create).toHaveBeenCalledWith(
+      `login_reminder_${today}`,
+      expect.objectContaining({
+        title: '🔑 Log in to LeetCode',
+        message: expect.stringContaining('Log in to sync your active streak'),
+      })
+    );
   });
 });
 

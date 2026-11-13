@@ -79,6 +79,8 @@ export const STORAGE_KEYS = {
   LAST_COIN_CLAIM: 'leeting_last_coin_claim',
   NOTIFIED_CONTESTS: 'leeting_notified_contests',
   EXTENSION_META: 'leeting_extension_meta',
+  LAST_STARTUP_NOTIF_DATE: 'leeting_last_startup_notif_date',
+  EXPANDED_SECTIONS: 'leeting_expanded_sections',
 };
 
 export async function getFocusModeEnabled() {
@@ -111,4 +113,25 @@ export async function getLastCoinClaimDate() {
 
 export async function setLastCoinClaimDate(dateString) {
   return storageSet(STORAGE_KEYS.LAST_COIN_CLAIM, dateString);
+}
+
+export const DEFAULT_EXPANDED_SECTIONS = {
+  user: true,
+  daily: true,
+  contest: true,
+  sbs: true,
+  focus: true,
+  coins: true,
+};
+
+export async function getExpandedSections() {
+  const saved = await storageGet(STORAGE_KEYS.EXPANDED_SECTIONS, null);
+  if (!saved || typeof saved !== 'object') {
+    return { ...DEFAULT_EXPANDED_SECTIONS };
+  }
+  return { ...DEFAULT_EXPANDED_SECTIONS, ...saved };
+}
+
+export async function setExpandedSections(sections) {
+  return storageSet(STORAGE_KEYS.EXPANDED_SECTIONS, sections);
 }

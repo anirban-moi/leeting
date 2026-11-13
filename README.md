@@ -18,15 +18,17 @@ Leeting keeps your LeetCode Daily Coding Challenge, active streak, LeetCoins, an
   - **Instagram & Facebook**: Redirects `instagram.com`, `facebook.com`, and `fb.com` to the built-in dark-mode Focus block page (`blocked.html`).
   - **LinkedIn**: Redirects `linkedin.com/video` to `blocked.html` and hides `/video` navigation tabs, carousels, and short-form video posts.
 - **Solve Before Scroll Mode**: Automatically turns **Focus Mode** ON and locks the manual toggle whenever you are signed in and today's Daily Challenge is unsolved — unlocking automatically the moment you solve it.
+- **Smooth Collapsible Accordion & Compact UI**: Every section features a collapsible dropdown that shrinks down to an ultra-compact ~359px popup. Uses CSS Grid row interpolation and Material standard easing (`cubic-bezier(0.4, 0, 0.2, 1)`) so lower modules glide up and down smoothly at ease.
+- **Browser Startup Alerts**: On browser startup, Leeting checks and sends a local notification if today's Daily Challenge is pending or if a contest is starting soon (with a prompt to log in if signed out).
 - **Safe Extension Upgrades**: Persists all Focus Mode settings, Solve Before Scroll state, coin claim history, contest notifications, and cached dashboard state safely across extension upgrades (including upgrades from `v1.0.8` → `v1.0.9`).
 
 ---
 
 ## Screenshots
 
-| Solved Dashboard & Focus Mode | Solve Before Scroll (Locked ON) |
-| :---: | :---: |
-| ![Leeting Popup Dashboard](docs/screenshots/popup-dashboard.png) | ![Leeting Solve Before Scroll Locked](docs/screenshots/popup-locked.png) |
+| Expanded Dashboard | Solve Before Scroll (Locked ON) | Ultra-Compact Collapsed State |
+| :---: | :---: | :---: |
+| ![Leeting Popup Dashboard](docs/screenshots/popup-dashboard.png) | ![Leeting Solve Before Scroll Locked](docs/screenshots/popup-locked.png) | ![Leeting Collapsed](docs/screenshots/popup-collapsed.png) |
 
 ### Focus Mode Block Page (`blocked.html`)
 ![Leeting Focus Block Page](docs/screenshots/blocked-page.png)
@@ -74,18 +76,18 @@ Leeting operates **100% locally** and never transmits cookies, browsing data, or
 
 ## Installation
 
-### Option 1: Install from GitHub Releases (Recommended)
+### Method 1: Install Pre-Built Release (Recommended — No build needed)
 
-Download the pre-built zip archive for your browser from the [Releases](../../releases) page:
+Download the pre-built zip archive for your browser from the [GitHub Releases](https://github.com/anirban-moi/leeting/releases) page:
 
 - **Chrome / Edge**: `leeting-1.0.9-chrome.zip`
 - **Firefox (MV3)**: `leeting-1.0.9-firefox.zip`
 
 #### Google Chrome
 1. Unzip `leeting-1.0.9-chrome.zip` into a folder (for example, `leeting-chrome/`).
-2. Open `chrome://extensions` and enable **Developer mode** (top right).
+2. Open `chrome://extensions` and enable **Developer mode** (toggle at top right).
 3. Click **Load unpacked** and select the extracted folder.
-4. Pin **Leeting** from the Extensions toolbar icon.
+4. Pin **Leeting** from the Extensions toolbar puzzle icon.
 
 #### Microsoft Edge
 1. Unzip `leeting-1.0.9-chrome.zip` into a folder.
@@ -96,6 +98,29 @@ Download the pre-built zip archive for your browser from the [Releases](../../re
 1. Open `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on...** and select `leeting-1.0.9-firefox.zip` (or extract it and select `manifest.json`).
 3. *(Important for Firefox MV3)* Open `about:addons` → **Leeting** → **Permissions and data** and make sure **Access your data for all websites / listed hosts** is enabled so `declarativeNetRequest` redirects and LeetCode cookie sync work as expected.
+
+---
+
+### Method 2: Build & Install from Source (For Developers)
+
+If you prefer building directly from the source code:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/anirban-moi/leeting.git
+cd leeting
+
+# 2. Install dependencies
+pnpm install
+
+# 3. Build for your target browser
+pnpm build          # Builds Chrome/Edge into .output/chrome-mv3
+pnpm build:firefox  # Builds Firefox MV3 into .output/firefox-mv3
+```
+
+Then load `.output/chrome-mv3` or `.output/firefox-mv3` using the **Load unpacked** steps described above.
+
+---
 
 ### Upgrading from `v1.0.8` (Without Losing Stored Data)
 
@@ -140,7 +165,7 @@ pnpm verify:e2e
 ## Release Checklist (`v1.0.9`)
 
 - [x] Manifest, `package.json`, and popup badge aligned at `v1.0.9`.
-- [x] Unit & integration tests (`tests/auth.test.js`, `tests/lifecycle.test.js`, `tests/worker.test.js`, `tests/network.test.js`, `tests/focus.test.js`, `tests/storage.test.js`, `tests/leetcode.test.js`, `tests/App.test.jsx`, `tests/manifest.test.js`, `tests/build.test.js`).
+- [x] Unit & integration tests (`tests/auth.test.js`, `tests/lifecycle.test.js`, `tests/worker.test.js`, `tests/network.test.js`, `tests/focus.test.js`, `tests/storage.test.js`, `tests/leetcode.test.js`, `tests/App.test.jsx`, `tests/animation.test.jsx`, `tests/manifest.test.js`, `tests/build.test.js`).
 - [x] Live Chromium MV3 E2E verification & real extension screenshots (`scripts/verify-extension.mjs`).
 - [x] Release bundles built for Chrome/Edge (`chrome-mv3`) and Firefox (`firefox-mv3`).
 - [ ] Manual smoke pass in desktop Firefox (recommended before tagging public GitHub Release if developing on a machine without Firefox installed).

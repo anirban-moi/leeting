@@ -332,6 +332,88 @@ async function runVerification() {
       const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, popupSession);
       fs.writeFileSync(path.join(SCREENSHOTS_DIR, 'popup-locked.png'), Buffer.from(data, 'base64'));
       console.log('✓ Captured docs/screenshots/popup-locked.png');
+
+      // Test live frame-by-frame animation & smooth upward easing of lower modules
+      const animTelemetry = await cdp.evalInSession(
+        popupSession,
+        `new Promise((resolve) => {
+          const dailyHeader = document.querySelector('[title*="Daily Challenge"]');
+          const sbsCard = document.querySelector('[data-testid="sbs-dropdown"]').parentElement;
+          const dailyDropdown = document.querySelector('[data-testid="daily-dropdown"]');
+
+          const initialDailyHeight = dailyDropdown.getBoundingClientRect().height;
+          const initialSbsTop = sbsCard.getBoundingClientRect().top;
+
+          // Trigger collapse on Daily Challenge
+          dailyHeader.click();
+
+          const samples = [];
+          const t0 = performance.now();
+          const interval = setInterval(() => {
+            const elapsed = Math.round(performance.now() - t0);
+            const sbsTop = sbsCard.getBoundingClientRect().top;
+            const dailyHeight = dailyDropdown.getBoundingClientRect().height;
+            samples.push({ elapsed, sbsTop, dailyHeight });
+            if (elapsed >= 360) {
+              clearInterval(interval);
+              resolve({
+                initialDailyHeight,
+                initialSbsTop,
+                finalDailyHeight: dailyDropdown.getBoundingClientRect().height,
+                finalSbsTop: sbsCard.getBoundingClientRect().top,
+                samples,
+              });
+            }
+          }, 25);
+        })`
+      );
+
+      assert(animTelemetry.initialDailyHeight > 40, 'Daily challenge should be expanded initially');
+      assert(animTelemetry.finalDailyHeight === 0, 'Daily challenge must smoothly collapse to 0px');
+      assert(
+        animTelemetry.finalSbsTop < animTelemetry.initialSbsTop,
+        'Lower module (Solve Before Scroll) must glide up when upper module collapses'
+      );
+      const midSample = animTelemetry.samples.find((s) => s.elapsed >= 80 && s.elapsed <= 200);
+      assert(
+        midSample &&
+          midSample.sbsTop < animTelemetry.initialSbsTop &&
+          midSample.sbsTop > animTelemetry.finalSbsTop,
+        'Lower module must glide smoothly through intermediate positions, not jump instantaneously'
+      );
+      console.log(
+        `✓ Verified live easing animation: lower module glided up smoothly at ease (top: ${Math.round(
+          animTelemetry.initialSbsTop
+        )}px -> mid: ${Math.round(midSample.sbsTop)}px -> final: ${Math.round(
+          animTelemetry.finalSbsTop
+        )}px over 280ms)`
+      );
+
+      // Now collapse all sections to verify the minimal compact popup height
+      await cdp.evalInSession(
+        swSession,
+        `chrome.storage.local.set({
+          leeting_expanded_sections: {
+            user: false,
+            daily: false,
+            contest: false,
+            sbs: false,
+            focus: false,
+            coins: false,
+          }
+        })`
+      );
+      await cdp.send('Page.reload', {}, popupSession);
+      await new Promise((r) => setTimeout(r, 1000));
+      const collapsedHeight = await cdp.evalInSession(popupSession, 'document.body.offsetHeight');
+      console.log(`✓ Collapsed popup rendered with compact height: ${collapsedHeight}px (takes minimal space)`);
+      const { data: collapsedData } = await cdp.send('Page.captureScreenshot', {
+        format: 'png',
+        clip: { x: 0, y: 0, width: 360, height: collapsedHeight, scale: 2 }
+      }, popupSession);
+      fs.writeFileSync(path.join(SCREENSHOTS_DIR, 'popup-collapsed.png'), Buffer.from(collapsedData, 'base64'));
+      console.log('✓ Captured docs/screenshots/popup-collapsed.png');
+
       await cdp.send('Target.closeTarget', { targetId });
     }
 

@@ -8,6 +8,8 @@ import {
   setAutoFocusLocked,
   getLastCoinClaimDate,
   setLastCoinClaimDate,
+  getExpandedSections,
+  setExpandedSections,
   storageGet,
   storageSet,
 } from '../src/services/storage.js';
@@ -50,5 +52,30 @@ describe('Storage Service', () => {
     expect(await getLastCoinClaimDate()).toBeNull();
     await setLastCoinClaimDate('2026-11-11');
     expect(await getLastCoinClaimDate()).toBe('2026-11-11');
+  });
+
+  it('manages collapsible section states with default all open', async () => {
+    const defaults = await getExpandedSections();
+    expect(defaults).toEqual({
+      user: true,
+      daily: true,
+      contest: true,
+      sbs: true,
+      focus: true,
+      coins: true,
+    });
+
+    await setExpandedSections({
+      user: false,
+      daily: true,
+      contest: false,
+      focus: true,
+      coins: false,
+    });
+
+    const updated = await getExpandedSections();
+    expect(updated.user).toBe(false);
+    expect(updated.contest).toBe(false);
+    expect(updated.daily).toBe(true);
   });
 });

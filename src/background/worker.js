@@ -294,3 +294,89 @@ export function setupAlarms(alarmsApi) {
     delayInMinutes: 0.5,
   });
 }
+
+/**
+ * Send startup notifications when the user opens the browser:
+ * - Upcoming contest alert
+ * - Daily coding challenge (if pending)
+ * - Optional login reminder if not signed in
+ */
+export async function sendStartupNotifications(customDeps = {}) {
+  const notifications =
+    customDeps.notificationsApi || (typeof chrome !== 'undefined' ? chrome.notifications : null);
+  if (!notifications || !notifications.create) return;
+
+  const today = new Date().toISOString().split('T')[0];
+  const readStorage = customDeps.storageGet || storageGet;
+  const writeStorage = customDeps.storageSet || storageSet;
+
+  const lastNotifDate = await readStorage(STORAGE_KEYS.LAST_STARTUP_NOTIF_DATE, null);
+  if (lastNotifDate === today && !customDeps.force) {
+    return;
+  }
+
+  const fetchStatus = customDeps.fetchUserStatus || fetchUserStatus;
+  const fetchDaily = customDeps.fetchDailyChallenge || fetchDailyChallenge;
+  const fetchContests = customDeps.fetchUpcomingContests || fetchUpcomingContests;
+
+  const iconUrl =
+    typeof chrome !== 'undefined' && chrome.runtime?.getURL
+      ? chrome.runtime.getURL('icon/128.png')
+      : '';
+
+  try {
+    const [userResult, dailyResult, contestResult] = await Promise.allSettled([
+      fetchStatus(),
+      fetchDaily(),
+      fetchContests(),
+    ]);
+
+    const user = userResult.status === 'fulfilled' ? userResult.value : null;
+    const daily = dailyResult.status === 'fulfilled' ? dailyResult.value : null;
+    const contests = contestResult.status === 'fulfilled' ? contestResult.value : [];
+
+    // 1. User status: if not logged in, prompt to log in
+    if (!user || !user.isSignedIn) {
+      notifications.create(`login_reminder_${today}`, {
+        type: 'basic',
+        iconUrl,
+        title: '🔑 Log in to LeetCode',
+        message: 'Log in to sync your active streak, daily challenges, and contest alerts.',
+        priority: 2,
+      });
+    } else if (daily && !daily.isSolved) {
+      // If logged in and today's daily challenge is pending
+      notifications.create(`daily_${daily.date || today}`, {
+        type: 'basic',
+        iconUrl,
+        title: '⚡ LeetCode Daily Challenge',
+        message: `Today's problem: "${daily.title}" (${daily.difficulty}) is waiting. Keep your streak alive!`,
+        priority: 2,
+      });
+    }
+
+    // 2. Upcoming contest alert
+    if (contests && contests.length > 0) {
+      const nextContest = contests[0];
+      const diffMs = nextContest.startTimeMs - Date.now();
+      if (diffMs > 0) {
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const timeUntil =
+          hours > 24 ? `in ${Math.floor(hours / 24)}d ${hours % 24}h` : `in ${hours}h ${mins}m`;
+
+        notifications.create(`contest_${nextContest.titleSlug}`, {
+          type: 'basic',
+          iconUrl,
+          title: `🏆 Upcoming Contest: ${nextContest.title}`,
+          message: `Contest starts ${timeUntil}. Click to view details and register!`,
+          priority: 1,
+        });
+      }
+    }
+
+    await writeStorage(STORAGE_KEYS.LAST_STARTUP_NOTIF_DATE, today);
+  } catch (err) {
+    console.warn('Error during startup notifications:', err);
+  }
+}

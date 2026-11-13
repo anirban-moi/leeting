@@ -3,10 +3,12 @@ import {
   setupAlarms,
   runDailyCheck,
   runContestCheck,
+  sendStartupNotifications,
 } from './worker.js';
 import { syncLeetCodeNetworkRules, syncFocusModeNetworkRules } from '../services/network.js';
 import {
   getFocusModeEnabled,
+  storageGet,
   storageSet,
   STORAGE_KEYS,
 } from '../services/storage.js';
@@ -20,6 +22,7 @@ export async function handleInstalled(details = {}, customDeps = {}) {
   const readFocusEnabled = customDeps.getFocusModeEnabled || getFocusModeEnabled;
   const checkDaily = customDeps.runDailyCheck || runDailyCheck;
   const checkContest = customDeps.runContestCheck || runContestCheck;
+  const sendStartup = customDeps.sendStartupNotifications || sendStartupNotifications;
   const setStorage = customDeps.storageSet || storageSet;
 
   // Restore focus DNR rules immediately from preserved storage
@@ -37,6 +40,7 @@ export async function handleInstalled(details = {}, customDeps = {}) {
 
   await syncLeetCode();
   await Promise.all([checkDaily(), checkContest()]);
+  await sendStartup();
 }
 
 /**
@@ -59,6 +63,7 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
   const readFocusEnabled = customDeps.getFocusModeEnabled || getFocusModeEnabled;
   const checkDaily = customDeps.runDailyCheck || runDailyCheck;
   const checkContest = customDeps.runContestCheck || runContestCheck;
+  const sendStartup = customDeps.sendStartupNotifications || sendStartupNotifications;
   const initAlarms = customDeps.setupAlarms || setupAlarms;
 
   // Initialize network header modification and focus mode rules on worker startup
@@ -103,6 +108,13 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
     });
   }
 
+  // Send startup notifications when user launches browser for the first time
+  if (runtime?.onStartup) {
+    runtime.onStartup.addListener(() => {
+      Promise.resolve(syncLeetCode()).then(() => sendStartup());
+    });
+  }
+
   // Initialize periodic alarms
   if (alarms) {
     initAlarms(alarms);
@@ -118,12 +130,17 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
     }
   }
 
-  // Handle contest notification clicks
+  // Handle contest, daily challenge, and login notification clicks
   if (notifications?.onClicked && tabs?.create) {
-    notifications.onClicked.addListener((notificationId) => {
+    notifications.onClicked.addListener(async (notificationId) => {
       if (notificationId.startsWith('contest_')) {
         const slug = notificationId.replace('contest_', '');
         tabs.create({ url: `https://leetcode.com/contest/${slug}` });
+      } else if (notificationId.startsWith('login_')) {
+        tabs.create({ url: 'https://leetcode.com/accounts/login/' });
+      } else if (notificationId.startsWith('daily_')) {
+        const cachedDaily = await (customDeps.storageGet || storageGet)(STORAGE_KEYS.CACHED_DAILY, null);
+        tabs.create({ url: cachedDaily?.link || 'https://leetcode.com/problemset/' });
       } else {
         tabs.create({ url: 'https://leetcode.com' });
       }
