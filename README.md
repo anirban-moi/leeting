@@ -21,6 +21,8 @@ Leeting keeps your LeetCode Daily Coding Challenge, active streak, LeetCoins, an
 - **Smooth Collapsible Accordion & Compact UI**: Every section features a collapsible dropdown that shrinks down to an ultra-compact ~359px popup. Uses CSS Grid row interpolation and Material standard easing (`cubic-bezier(0.4, 0, 0.2, 1)`) so lower modules glide up and down smoothly at ease.
 - **Browser Startup Alerts**: On browser startup, Leeting checks and sends a local notification if today's Daily Challenge is pending or if a contest is starting soon (with a prompt to log in if signed out).
 - **Safe Extension Upgrades**: Persists all Focus Mode settings, Solve Before Scroll state, coin claim history, contest notifications, and cached dashboard state safely across extension upgrades (including upgrades from `v1.0.8` → `v1.0.9`).
+- **Live Companion Web Bridge**: Bi-directional remote control with **Leeting Web** (`leeting_web`) via `window.postMessage` — toggling distraction rules, starting Pomodoro timers, and streaming live LeetCode stats with sub-10ms latency.
+- **Focus Session Remote Timer Sync**: Synchronizes active Pomodoro timers (`25m`, `45m`, `60m`, `90m`) with background tabs, automatically locking focus while the timer counts down.
 
 ---
 
@@ -40,6 +42,9 @@ Leeting keeps your LeetCode Daily Coding Challenge, active streak, LeetCoins, an
 ```mermaid
 flowchart LR
     Popup["Popup UI<br/>(entrypoints/popup/App.jsx)"] -->|REFRESH_DATA| BG["Background Service Worker<br/>(entrypoints/background.js + lifecycle.js)"]
+    Web["Leeting Web Companion<br/>(http://localhost:3000)"] <-->|postMessage| Bridge["Bridge Content Script<br/>(entrypoints/bridge.content.js)"]
+    Bridge <-->|START/STOP_TIMER, GET_STATUS, TOGGLE_RULE| BG
+
     BG --> Worker["Background Workflows<br/>(src/background/worker.js)"]
 
     Worker -->|Cookie & CSRF Auth| LC["LeetCode Service<br/>(src/services/leetcode.js)"]
@@ -48,6 +53,7 @@ flowchart LR
     BG -->|Alarms / Startup / Cookies / Updates| DNR["Declarative Net Request<br/>(src/services/network.js)"]
     Popup -->|Focus / Solve-Before-Scroll Toggle| Storage["Cross-Browser Storage<br/>(src/services/storage.js)"]
     Worker -->|Persist State & Lock| Storage
+    BG -->|ACTIVE_TIMER, FOCUS_MODE| Storage
 
     Storage -.->|FOCUS_MODE Updates| DNR
     Storage -.->|storage.onChanged / onMessage| Content["Focus Content Script<br/>(entrypoints/focus.content.js + src/content/focus.js)"]
@@ -65,12 +71,13 @@ Leeting operates **100% locally** and never transmits cookies, browsing data, or
 
 | Permission / Host | Why It Is Used |
 | :--- | :--- |
-| `storage` | Stores Focus Mode preferences, Solve Before Scroll lock state, cached Daily Challenge/user profile, coin check-in date, and notified contest history locally. |
+| `storage` | Stores Focus Mode preferences, Solve Before Scroll lock state, cached Daily Challenge/user profile, active timer state, coin check-in date, and notified contest history locally. |
 | `alarms` | Runs periodic background syncs (Daily Challenge every 30 min, Contests every 60 min). |
 | `notifications` | Notifies you 45 minutes before an upcoming LeetCode contest begins. |
 | `cookies` (`*.leetcode.com`) | Reads `LEETCODE_SESSION` & `csrftoken` to authenticate your personal LeetCode streak and daily solve status. |
 | `declarativeNetRequest` & `declarativeNetRequestWithHostAccess` | Attaches auth headers strictly on extension-initiated `leetcode.com/graphql` requests and redirects blocked distraction sites to `blocked.html` when Focus Mode is ON. |
 | Host permissions (`leetcode.com`, `youtube.com`, `instagram.com`, `facebook.com`, `fb.com`, `linkedin.com`) | Enables LeetCode API authentication and Focus Mode blocking on distraction domains. Zero content scripts are injected on `leetcode.com`. |
+| Host permissions (`http://localhost/*`, `http://127.0.0.1/*`) | Enables the secure content script bridge to connect with the companion dashboard (`leeting_web`) on your local machine for remote timer and distraction control. |
 
 ---
 
@@ -152,13 +159,23 @@ pnpm zip:firefox    # -> .output/leeting-1.0.9-firefox.zip
 
 ### Automated Test Suites
 
+Leeting includes a comprehensive automated test harness covering cookie authentication, Declarative Net Request redirects, background alarms, lifecycle upgrades, and UI components:
+
 ```bash
-# Run all Vitest unit & integration suites (auth, background workflows, upgrade preservation, focus rules, UI, builds)
+# Run all Vitest unit & integration suites (76 tests across 11 test suites)
 pnpm test
 
 # Run headless Chromium MV3 E2E verification (service worker, alarms, live DNR redirects, storage persistence, screenshots)
 pnpm verify:e2e
 ```
+
+#### Test Matrix (76 Tests Passing)
+- **Authentication & Cookies (`tests/auth.test.js`)**: Verifies cookie header extraction, fallback from `set` to `append` when rules are restricted, and zero-knowledge storage.
+- **Background Lifecycle & Upgrades (`tests/lifecycle.test.js`)**: Validates `onInstalled`, periodic alarms, `START_FOCUS_TIMER` / `STOP_FOCUS_TIMER` / `GET_STATUS` message handling, and verifies that upgrading from `v1.0.8` to `v1.0.9` preserves all user settings, streak caches, and coin claim dates without data loss.
+- **Background Worker (`tests/worker.test.js`)**: Tests daily challenge polling, contest notifications, and streak caching.
+- **Focus Mode & DNR (`tests/focus.test.js`, `tests/network.test.js`)**: Tests dynamic declarativeNetRequest rules for YouTube Shorts/Playables, Instagram, Facebook, and LinkedIn.
+- **LeetCode GraphQL Engine (`tests/leetcode.test.js`)**: Tests query generation, fallback for public vs authenticated sessions, and error handling.
+- **Cross-Browser Manifests & Packaging (`tests/manifest.test.js`, `tests/build.test.js`)**: Validates MV3 schemas for Chromium and Firefox.
 
 ---
 

@@ -21,7 +21,9 @@ export default defineConfig({
       '*://*.instagram.com/*',
       '*://*.facebook.com/*',
       '*://*.fb.com/*',
-      '*://*.linkedin.com/*'
+      '*://*.linkedin.com/*',
+      'http://localhost/*',
+      'http://127.0.0.1/*'
     ],
     web_accessible_resources: [
       {
@@ -29,6 +31,15 @@ export default defineConfig({
         matches: ['<all_urls>']
       }
     ],
+    externally_connectable: {
+      matches: [
+        'http://localhost:3000/*',
+        'http://localhost:3001/*',
+        'http://127.0.0.1:3000/*',
+        'https://*.leeting.dev/*',
+        'https://*.vercel.app/*'
+      ]
+    },
     action: {
       default_title: 'Leeting',
       default_popup: 'popup.html'

@@ -74,14 +74,24 @@ export const STORAGE_KEYS = {
   FOCUS_MODE: 'leeting_focus_mode_enabled',
   SOLVE_BEFORE_SCROLL: 'leeting_solve_before_scroll_enabled',
   AUTO_FOCUS_LOCKED: 'leeting_auto_focus_locked',
+  ACTIVE_TIMER: 'leeting_active_timer',
   CACHED_DAILY: 'leeting_cached_daily',
   CACHED_USER: 'leeting_cached_user',
+  CACHED_CONTESTS: 'leeting_cached_contests',
   LAST_COIN_CLAIM: 'leeting_last_coin_claim',
   NOTIFIED_CONTESTS: 'leeting_notified_contests',
   EXTENSION_META: 'leeting_extension_meta',
   LAST_STARTUP_NOTIF_DATE: 'leeting_last_startup_notif_date',
   EXPANDED_SECTIONS: 'leeting_expanded_sections',
 };
+
+export async function getActiveTimer() {
+  return storageGet(STORAGE_KEYS.ACTIVE_TIMER, null);
+}
+
+export async function setActiveTimer(timerData) {
+  return storageSet(STORAGE_KEYS.ACTIVE_TIMER, timerData);
+}
 
 export async function getFocusModeEnabled() {
   return storageGet(STORAGE_KEYS.FOCUS_MODE, false);

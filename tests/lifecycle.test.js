@@ -354,3 +354,98 @@ describe('Upgrade Data Preservation (v1.0.8 -> v1.0.9)', () => {
     expect(meta.currentVersion).toBe('1.0.9');
   });
 });
+
+describe('Web Bridge & Remote Timer Workflows', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete globalThis.chrome;
+  });
+
+  it('handles GET_STATUS, START_FOCUS_TIMER, and STOP_FOCUS_TIMER commands via bridge', async () => {
+    const runtimeOnMessage = createListenerRegistry();
+    const syncFocus = vi.fn().mockResolvedValue({ ok: true });
+    const tabsSendMessage = vi.fn().mockResolvedValue(undefined);
+    const mockTabsQuery = vi.fn((_query, cb) => cb([{ id: 101 }, { id: 102 }]));
+
+    const persistentStorage = createPersistentChromeStorage({
+      [STORAGE_KEYS.CACHED_USER]: { username: 'The-Boss', currentStreak: 12 },
+      [STORAGE_KEYS.FOCUS_MODE]: false,
+      [STORAGE_KEYS.SOLVE_BEFORE_SCROLL]: false,
+    });
+
+    globalThis.chrome = {
+      storage: { local: persistentStorage.local },
+      runtime: { lastError: null },
+    };
+
+    registerBackgroundListeners(
+      {
+        runtime: { onMessage: runtimeOnMessage },
+        tabs: { query: mockTabsQuery, sendMessage: tabsSendMessage },
+      },
+      {
+        syncLeetCodeNetworkRules: vi.fn().mockResolvedValue({ ok: true }),
+        syncFocusModeNetworkRules: syncFocus,
+        getFocusModeEnabled: async () => false,
+      }
+    );
+
+    // 1. GET_STATUS
+    const statusRes = vi.fn();
+    runtimeOnMessage.listeners[0]({ source: 'LEETING_WEB_BRIDGE', type: 'GET_STATUS' }, {}, statusRes);
+    await vi.waitFor(() => {
+      expect(statusRes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isOnline: true,
+          version: '1.0.9',
+          user: expect.objectContaining({ username: 'The-Boss' }),
+          focusMode: false,
+        })
+      );
+    });
+
+    // 2. START_FOCUS_TIMER
+    const timerRes = vi.fn();
+    runtimeOnMessage.listeners[0](
+      {
+        source: 'LEETING_WEB_BRIDGE',
+        type: 'START_FOCUS_TIMER',
+        payload: { durationMinutes: 25, startedAt: 1000, endTime: 1501000 },
+      },
+      {},
+      timerRes
+    );
+    await vi.waitFor(() => {
+      expect(timerRes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          focusMode: true,
+          timer: expect.objectContaining({ isActive: true, durationMinutes: 25 }),
+        })
+      );
+    });
+    expect(syncFocus).toHaveBeenCalledWith(true);
+
+    // 3. STOP_FOCUS_TIMER
+    const stopRes = vi.fn();
+    runtimeOnMessage.listeners[0](
+      { source: 'LEETING_WEB_BRIDGE', type: 'STOP_FOCUS_TIMER' },
+      {},
+      stopRes
+    );
+    await vi.waitFor(() => {
+      expect(stopRes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: true,
+          focusMode: false,
+          timer: expect.objectContaining({ isActive: false }),
+        })
+      );
+    });
+    expect(syncFocus).toHaveBeenCalledWith(false);
+  });
+});

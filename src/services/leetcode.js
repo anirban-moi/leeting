@@ -141,6 +141,9 @@ export async function fetchUserStatus(fetchFn = fetch) {
 
   let avatar = null;
   let points = 0;
+  let ranking = null;
+  let submissionCalendar = null;
+  let difficultyStats = null;
   let currentStreak = 0;
   let longestStreak = 0;
   let totalActiveDays = 0;
@@ -158,6 +161,13 @@ export async function fetchUserStatus(fetchFn = fetch) {
             }
             profile {
               userAvatar
+              ranking
+            }
+            submitStatsGlobal {
+              acSubmissionNum {
+                difficulty
+                count
+              }
             }
             userCalendar(year: $year) {
               streak
@@ -176,9 +186,18 @@ export async function fetchUserStatus(fetchFn = fetch) {
       if (user) {
         points = user.contributions?.points || 0;
         avatar = user.profile?.userAvatar || null;
+        ranking = user.profile?.ranking || null;
+
+        if (Array.isArray(user.submitStatsGlobal?.acSubmissionNum)) {
+          difficultyStats = {};
+          user.submitStatsGlobal.acSubmissionNum.forEach((item) => {
+            difficultyStats[item.difficulty.toLowerCase()] = item.count;
+          });
+        }
 
         const calendar = user.userCalendar;
         if (calendar) {
+          submissionCalendar = calendar.submissionCalendar || null;
           totalActiveDays = calendar.totalActiveDays || 0;
           const calendarStreak = calculateCurrentStreak(calendar.submissionCalendar);
           currentStreak = Math.max(activeCount || 0, calendarStreak);
@@ -212,9 +231,12 @@ export async function fetchUserStatus(fetchFn = fetch) {
     username: status.username || null,
     points,
     avatar,
+    ranking,
     currentStreak,
     longestStreak,
     totalActiveDays,
+    submissionCalendar,
+    difficultyStats,
     streakDebug,
   };
 }

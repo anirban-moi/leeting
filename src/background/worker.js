@@ -59,21 +59,10 @@ export async function enforceSolveBeforeScroll(daily, customDeps = {}) {
   const currentFocus = await getFocusModeEnabled();
   const syncRules = customDeps.syncFocusRules || syncFocusModeNetworkRules;
 
-  if (!solveBeforeScroll) {
-    if (autoLocked) {
-      await setAutoFocusLocked(false);
-    }
-    return { focusMode: currentFocus, autoLocked: false };
-  }
-
-  if (!daily) {
-    return { focusMode: currentFocus, autoLocked };
-  }
-
   const broadcastToTabs = (enabled) => {
     if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
       chrome.tabs.query({}, (tabs) => {
-        tabs.forEach((tab) => {
+        tabs?.forEach((tab) => {
           if (tab.id) {
             chrome.tabs.sendMessage(tab.id, { type: 'FOCUS_MODE_CHANGED', enabled }).catch(() => {});
           }
@@ -82,7 +71,16 @@ export async function enforceSolveBeforeScroll(daily, customDeps = {}) {
     }
   };
 
-  if (!daily.isSolved) {
+  if (!solveBeforeScroll) {
+    if (autoLocked) {
+      await setAutoFocusLocked(false);
+    }
+    return { focusMode: currentFocus, autoLocked: false };
+  }
+
+  const isSolved = Boolean(daily && daily.isSolved);
+
+  if (!isSolved) {
     if (!currentFocus || !autoLocked) {
       await setFocusModeEnabled(true);
       await setAutoFocusLocked(true);
@@ -233,6 +231,8 @@ export async function runContestCheck(customDeps = {}) {
     try {
       const contests = await fetchContests();
       if (!contests || contests.length === 0) return [];
+
+      await storageSet(STORAGE_KEYS.CACHED_CONTESTS, contests);
 
       const notifiedContests = (await storageGet(STORAGE_KEYS.NOTIFIED_CONTESTS, {})) || {};
       const now = Date.now();

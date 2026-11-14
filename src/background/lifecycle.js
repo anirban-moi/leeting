@@ -4,10 +4,15 @@ import {
   runDailyCheck,
   runContestCheck,
   sendStartupNotifications,
+  enforceSolveBeforeScroll,
 } from './worker.js';
 import { syncLeetCodeNetworkRules, syncFocusModeNetworkRules } from '../services/network.js';
 import {
   getFocusModeEnabled,
+  setFocusModeEnabled,
+  getSolveBeforeScrollEnabled,
+  setSolveBeforeScrollEnabled,
+  getAutoFocusLocked,
   storageGet,
   storageSet,
   STORAGE_KEYS,
@@ -147,9 +152,10 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
     });
   }
 
-  // Handle manual refresh requests from popup UI
+  // Handle messages from popup UI and Web Companion Bridge
   if (runtime?.onMessage) {
     runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      // 1. Popup UI Manual Refresh
       if (message?.type === 'REFRESH_DATA') {
         Promise.resolve(syncLeetCode())
           .then(() => Promise.all([checkDaily(), checkContest()]))
@@ -160,6 +166,139 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
             console.error('Refresh error:', err);
             sendResponse({ success: false, error: err?.message || 'Refresh failed' });
           });
+        return true;
+      }
+
+      // 2. Web Companion Bridge Commands
+      if (message?.source === 'LEETING_WEB_BRIDGE') {
+        const handleBridge = async () => {
+          switch (message.type) {
+            case 'GET_STATUS': {
+              const [user, daily, contests, focusMode, sbs, autoLocked, activeTimer] = await Promise.all([
+                storageGet(STORAGE_KEYS.CACHED_USER, null),
+                storageGet(STORAGE_KEYS.CACHED_DAILY, null),
+                storageGet(STORAGE_KEYS.CACHED_CONTESTS, []),
+                getFocusModeEnabled(),
+                getSolveBeforeScrollEnabled(),
+                getAutoFocusLocked(),
+                storageGet(STORAGE_KEYS.ACTIVE_TIMER, null),
+              ]);
+              return {
+                isOnline: true,
+                version: '1.0.9',
+                user,
+                daily,
+                contests,
+                focusMode,
+                solveBeforeScroll: sbs,
+                autoLocked,
+                activeTimer,
+                timestamp: Date.now(),
+              };
+            }
+
+            case 'START_FOCUS_TIMER': {
+              const durationMinutes = Number(message.payload?.durationMinutes) || 25;
+              const startedAt = Number(message.payload?.startedAt) || Date.now();
+              const endTime = Number(message.payload?.endTime) || (startedAt + durationMinutes * 60 * 1000);
+              const timerData = {
+                isActive: true,
+                durationMinutes,
+                startedAt,
+                endTime,
+              };
+
+              await storageSet(STORAGE_KEYS.ACTIVE_TIMER, timerData);
+              await setFocusModeEnabled(true);
+              await syncFocus(true);
+
+              if (tabs?.query) {
+                tabs.query({}, (tabList) => {
+                  tabList?.forEach((t) => {
+                    if (t.id) {
+                      tabs.sendMessage(t.id, { type: 'FOCUS_MODE_CHANGED', enabled: true }).catch(() => {});
+                      tabs.sendMessage(t.id, { type: 'TIMER_STATE_CHANGED', timer: timerData }).catch(() => {});
+                    }
+                  });
+                });
+              }
+
+              return { success: true, timer: timerData, focusMode: true };
+            }
+
+            case 'STOP_FOCUS_TIMER': {
+              const timerData = { isActive: false, stoppedAt: Date.now() };
+              await storageSet(STORAGE_KEYS.ACTIVE_TIMER, timerData);
+
+              const sbs = await getSolveBeforeScrollEnabled();
+              const autoLocked = await getAutoFocusLocked();
+              let nextFocus = false;
+
+              if (sbs && autoLocked) {
+                nextFocus = true;
+              } else {
+                await setFocusModeEnabled(false);
+                await syncFocus(false);
+              }
+
+              if (tabs?.query) {
+                tabs.query({}, (tabList) => {
+                  tabList?.forEach((t) => {
+                    if (t.id) {
+                      tabs.sendMessage(t.id, { type: 'FOCUS_MODE_CHANGED', enabled: nextFocus }).catch(() => {});
+                      tabs.sendMessage(t.id, { type: 'TIMER_STATE_CHANGED', timer: timerData }).catch(() => {});
+                    }
+                  });
+                });
+              }
+
+              return { success: true, timer: timerData, focusMode: nextFocus };
+            }
+
+            case 'SET_FOCUS_MODE': {
+              const enabled = Boolean(message.payload?.enabled);
+              await setFocusModeEnabled(enabled);
+              await syncFocus(enabled);
+              if (tabs?.query) {
+                tabs.query({}, (tabList) => {
+                  tabList?.forEach((t) => {
+                    if (t.id) {
+                      tabs.sendMessage(t.id, { type: 'FOCUS_MODE_CHANGED', enabled }).catch(() => {});
+                    }
+                  });
+                });
+              }
+              return { success: true, focusMode: enabled };
+            }
+
+            case 'SET_SOLVE_BEFORE_SCROLL': {
+              const enabled = Boolean(message.payload?.enabled);
+              await setSolveBeforeScrollEnabled(enabled);
+              const cachedDaily = await storageGet(STORAGE_KEYS.CACHED_DAILY, null);
+              const lockState = await enforceSolveBeforeScroll(cachedDaily);
+              return {
+                success: true,
+                solveBeforeScroll: enabled,
+                focusMode: lockState.focusMode,
+                autoLocked: lockState.autoLocked,
+              };
+            }
+
+            case 'REFRESH_LEETCODE': {
+              await syncLeetCode();
+              const [daily, contests] = await Promise.all([checkDaily(), checkContest()]);
+              const user = await storageGet(STORAGE_KEYS.CACHED_USER, null);
+              return { success: true, user, daily, contests };
+            }
+
+            default:
+              return { error: `Unknown bridge command: ${message.type}` };
+          }
+        };
+
+        handleBridge()
+          .then((res) => sendResponse(res))
+          .catch((err) => sendResponse({ error: err?.message || 'Bridge handler error' }));
         return true;
       }
     });

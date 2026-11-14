@@ -100,6 +100,36 @@ export default function App() {
     }
 
     init();
+
+    // Listen to real-time storage changes (e.g. from Web Dashboard or background alarms)
+    const handleStorageChange = (changes, areaName) => {
+      if (areaName !== 'local') return;
+      if (changes[STORAGE_KEYS.FOCUS_MODE] !== undefined) {
+        setFocusMode(Boolean(changes[STORAGE_KEYS.FOCUS_MODE].newValue));
+      }
+      if (changes[STORAGE_KEYS.SOLVE_BEFORE_SCROLL] !== undefined) {
+        setSolveBeforeScroll(Boolean(changes[STORAGE_KEYS.SOLVE_BEFORE_SCROLL].newValue));
+      }
+      if (changes[STORAGE_KEYS.AUTO_FOCUS_LOCKED] !== undefined) {
+        setAutoLocked(Boolean(changes[STORAGE_KEYS.AUTO_FOCUS_LOCKED].newValue));
+      }
+      if (changes[STORAGE_KEYS.CACHED_DAILY] !== undefined) {
+        setDaily(changes[STORAGE_KEYS.CACHED_DAILY].newValue);
+      }
+      if (changes[STORAGE_KEYS.CACHED_USER] !== undefined) {
+        setUser(changes[STORAGE_KEYS.CACHED_USER].newValue);
+      }
+    };
+
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener(handleStorageChange);
+    }
+
+    return () => {
+      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.removeListener(handleStorageChange);
+      }
+    };
   }, []);
 
   const refreshData = async () => {
@@ -169,7 +199,7 @@ export default function App() {
   };
 
   const isFocusLocked = Boolean(
-    solveBeforeScroll && autoLocked && user?.isSignedIn && !daily?.isSolved
+    solveBeforeScroll && !daily?.isSolved
   );
 
   const handleToggleFocusMode = async () => {
@@ -179,14 +209,21 @@ export default function App() {
     await setFocusModeEnabled(nextState);
     await syncFocusModeNetworkRules(nextState);
 
-    // Notify any active tabs of the change
+    // Broadcast to all active tabs (both focus shield and web companion bridge)
     if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
       chrome.tabs.query({}, (tabs) => {
-        tabs.forEach((tab) => {
+        tabs?.forEach((tab) => {
           if (tab.id) {
             chrome.tabs.sendMessage(tab.id, {
               type: 'FOCUS_MODE_CHANGED',
               enabled: nextState,
+            }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, {
+              type: 'LEETING_STATE_UPDATE',
+              payload: {
+                focusMode: nextState,
+                solveBeforeScroll,
+              },
             }).catch(() => {});
           }
         });
@@ -199,10 +236,27 @@ export default function App() {
     setSolveBeforeScroll(nextEnabled);
     await setSolveBeforeScrollEnabled(nextEnabled);
 
-    const effectiveDaily = user?.isSignedIn ? daily : null;
-    const lockState = await enforceSolveBeforeScroll(effectiveDaily);
+    const lockState = await enforceSolveBeforeScroll(daily);
     setFocusMode(lockState.focusMode);
     setAutoLocked(lockState.autoLocked);
+
+    // Broadcast update to all open tabs (content scripts & web companion)
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      chrome.tabs.query({}, (tabs) => {
+        tabs?.forEach((tab) => {
+          if (tab.id) {
+            chrome.tabs.sendMessage(tab.id, {
+              type: 'LEETING_STATE_UPDATE',
+              payload: {
+                solveBeforeScroll: nextEnabled,
+                focusMode: lockState.focusMode,
+                autoLocked: lockState.autoLocked,
+              },
+            }).catch(() => {});
+          }
+        });
+      });
+    }
   };
 
   const handleClaimCoins = async () => {
@@ -540,13 +594,19 @@ export default function App() {
           title={expandedSections.sbs ? 'Collapse Solve Before Scroll' : 'Expand Solve Before Scroll'}
         >
           <div className="flex items-center space-x-2">
-            <Lock className={`w-4 h-4 ${solveBeforeScroll ? 'text-amber-400' : 'text-gray-500'}`} />
+            <Lock className={`w-4 h-4 ${solveBeforeScroll ? (daily?.isSolved ? 'text-[#00b8a3]' : 'text-amber-400') : 'text-gray-500'}`} />
             <div className="flex items-center space-x-1.5">
               <span className="font-semibold text-gray-200">Solve Before Scroll</span>
-              {isFocusLocked && (
+              {solveBeforeScroll && isFocusLocked && (
                 <span className="inline-flex items-center space-x-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">
                   <Lock className="w-2.5 h-2.5" />
                   <span>Locked</span>
+                </span>
+              )}
+              {solveBeforeScroll && daily?.isSolved && (
+                <span className="inline-flex items-center space-x-0.5 text-[9px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                  <CheckCircle2 className="w-2.5 h-2.5" />
+                  <span>Solved Today</span>
                 </span>
               )}
             </div>

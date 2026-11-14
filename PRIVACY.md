@@ -36,6 +36,7 @@ Every permission declared in the Manifest V3 configuration serves a single, user
 | `*://*.instagram.com/*` | Blocks distracting Instagram access when **Focus Mode** is ON by redirecting to local `blocked.html`. |
 | `*://*.facebook.com/*`, `*://*.fb.com/*` | Blocks distracting Facebook access when **Focus Mode** is ON by redirecting to local `blocked.html`. |
 | `*://*.linkedin.com/*` | Redirects `linkedin.com/video` to local `blocked.html` and hides LinkedIn Video navigation links, feed carousels, and short-form video posts when **Focus Mode** is ON. |
+| `http://localhost/*`, `http://127.0.0.1/*` | Enables bi-directional remote control with the local **Leeting Web** companion dashboard via `window.postMessage`. No data is ever sent externally. |
 
 ---
 
@@ -46,8 +47,10 @@ Leeting stores only the following keys in `storage.local`:
 - `leeting_focus_mode_enabled` — Whether Focus Mode is active (`true`/`false`).
 - `leeting_solve_before_scroll_enabled` — Whether daily auto-lock mode is enabled (`true`/`false`).
 - `leeting_auto_focus_locked` — Tracks whether Focus Mode was auto-locked for today's unsolved challenge.
+- `leeting_active_timer` — Active Pomodoro focus countdown state (`isActive`, `durationMinutes`, `startedAt`, `endTime`).
 - `leeting_cached_daily` — Cached Daily Challenge title, difficulty, topic tags, link, and completion status.
 - `leeting_cached_user` — Cached LeetCode username, avatar URL, point balance, and streak counter.
+- `leeting_cached_contests` — Cached upcoming contest schedules.
 - `leeting_last_coin_claim` — Date string (`YYYY-MM-DD`) of your last LeetCode Store check-in click.
 - `leeting_notified_contests` — Map of contest slugs already notified so you are never alerted twice for the same contest.
 - `leeting_expanded_sections` — User preference map for collapsible dropdown sections (`user`, `daily`, `contest`, `sbs`, `focus`, `coins`).
