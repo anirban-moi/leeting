@@ -256,19 +256,31 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
             }
 
             case 'SET_FOCUS_MODE': {
-              const enabled = Boolean(message.payload?.enabled);
-              await setFocusModeEnabled(enabled);
-              await syncFocus(enabled);
+              const requested = Boolean(message.payload?.enabled);
+              const sbs = await getSolveBeforeScrollEnabled();
+              const autoLocked = await getAutoFocusLocked();
+
+              // If locked by Solve Before Scroll, cannot disable Focus Mode
+              if (!requested && sbs && autoLocked) {
+                return { success: false, focusMode: true, error: 'Focus Mode is locked by Solve Before Scroll.' };
+              }
+
+              await setFocusModeEnabled(requested);
+              await syncFocus(requested);
               if (tabs?.query) {
                 tabs.query({}, (tabList) => {
                   tabList?.forEach((t) => {
                     if (t.id) {
-                      tabs.sendMessage(t.id, { type: 'FOCUS_MODE_CHANGED', enabled }).catch(() => {});
+                      tabs.sendMessage(t.id, { type: 'FOCUS_MODE_CHANGED', enabled: requested }).catch(() => {});
+                      tabs.sendMessage(t.id, {
+                        type: 'LEETING_STATE_UPDATE',
+                        payload: { focusMode: requested },
+                      }).catch(() => {});
                     }
                   });
                 });
               }
-              return { success: true, focusMode: enabled };
+              return { success: true, focusMode: requested };
             }
 
             case 'SET_SOLVE_BEFORE_SCROLL': {
@@ -276,6 +288,28 @@ export function registerBackgroundListeners(customApis = {}, customDeps = {}) {
               await setSolveBeforeScrollEnabled(enabled);
               const cachedDaily = await storageGet(STORAGE_KEYS.CACHED_DAILY, null);
               const lockState = await enforceSolveBeforeScroll(cachedDaily);
+
+              if (tabs?.query) {
+                tabs.query({}, (tabList) => {
+                  tabList?.forEach((t) => {
+                    if (t.id) {
+                      tabs.sendMessage(t.id, {
+                        type: 'LEETING_STATE_UPDATE',
+                        payload: {
+                          solveBeforeScroll: enabled,
+                          focusMode: lockState.focusMode,
+                          autoLocked: lockState.autoLocked,
+                        },
+                      }).catch(() => {});
+                      tabs.sendMessage(t.id, {
+                        type: 'FOCUS_MODE_CHANGED',
+                        enabled: lockState.focusMode,
+                      }).catch(() => {});
+                    }
+                  });
+                });
+              }
+
               return {
                 success: true,
                 solveBeforeScroll: enabled,
